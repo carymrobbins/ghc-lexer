@@ -4,15 +4,16 @@ module Language.Haskell.GHC.Parser.Main where
 
 import Language.Haskell.GHC.Parser.Internal.JSON
 
-import Control.DeepSeq
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as C8
-import qualified Data.ByteString.Lazy.Char8 as LC8
-import qualified Data.Aeson as J
+import Control.Monad.Trans (liftIO)
 import Data.Char
+import Data.Foldable
 import Data.IORef
-import qualified Data.Text.IO as T
+import Data.List (intercalate)
+import Data.List.Split (splitOn)
+import qualified Data.Text as T
+import System.Console.Haskeline
 import System.Exit
+import System.Directory
 import System.IO
 import System.IO.Unsafe
 import Text.Read
@@ -29,59 +30,89 @@ import System.Environment
 
 main :: IO ()
 main = do
-  mFile <- getArgs >>= \case
-    []  -> return Nothing
-    [x] -> return $ Just x
-    xs  -> error $ "Expected 0-1 arguments, got " ++ show (length xs)
-
-  flags <- runGhc (Just libdir) $ return unsafeGlobalDynFlags
-
   hSetBuffering stdout LineBuffering
-
-  case mFile of
-    Nothing   -> runStdin flags
-    Just file -> runFile file flags
-
+  runInputT defaultSettings loop
   where
-  runFile file flags = do
-    stringBuf <- hGetStringBuffer file -- stringToStringBuffer <$> readFile file
-    runLazyLexer stringBuf flags
+  loop :: InputT IO ()
+  loop = getInputLine _PROMPT >>= \case
+    Nothing -> return ()
+    Just c -> runCommand c
 
-  runStdin flags = do
-    putStrLn "INPUT:"
+  runCommand c = case break (== ' ') c of
+    ("", "")          -> loop
+    ("lex", arg)      -> lexCmd runLazyLexer arg
+    ("lexall", arg)   -> lexCmd runStrictLexer arg
+    (q, _) | isQuit q -> return ()
+    (cmd, _) -> do
+      outputStrLn $ "Unknown command: " ++ cmd
+      loop
+
+  isQuit q = q `elem` ["quit", "q", "exit"]
+
+  lexCmd lexer arg = case trim arg of
+    ""   -> liftIO (lexStdin lexer) >> loop
+    file -> do
+      x <- liftIO $ doesFileExist file
+      if x then liftIO (lexFile lexer file) else outputStrLn $ "File not found: " ++ file
+      loop
+
+  lexFile lexer file = do
+    contents <- readFile file
+    let stringBuf =
+            stringToStringBuffer
+          $ intercalate "\n"
+          $ map applyCommentCPPToLine
+          $ splitOn "\n" contents
+    lexer stringBuf
+
+  lexStdin lexer = do
     stringBuf <- consumeStdin
-    runLazyLexer stringBuf flags
-    runStdin flags
+    lexer stringBuf
 
-runLazyLexer stringBuf flags = do
-  let srcLoc = mkRealSrcLoc (mkFastString "a.hs") 0 0
-  let initialState = mkPState flags stringBuf srcLoc
+{-# NOINLINE globalDynFlags  #-}
+globalDynFlags :: DynFlags
+globalDynFlags = unsafePerformIO $ runGhc (Just libdir) $ return unsafeGlobalDynFlags
+
+{-# NOINLINE defaultFlags #-}
+defaultFlags :: DynFlags
+defaultFlags =
+    flip gopt_set Opt_KeepRawTokenStream
+  . flip gopt_set Opt_Haddock
+  $ globalDynFlags
+
+initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 0 0
+
+runLazyLexer :: StringBuffer -> IO ()
+runLazyLexer stringBuf = do
+  let initialState = mkPState defaultFlags stringBuf initSrcLoc
   pStateRef <- newIORef initialState
-  putStrLn "OUTPUT: (Press enter for next element. Anything else will exit immediately)"
+  putStr "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
+  hFlush stdout
   loop pStateRef
   where
-  loop pStateRef = getLine >>= \case
-    "" -> showNextToken pStateRef
-    _  -> putStrLn "exiting..."
+  loop pStateRef = getChar >>= \case
+    '\n' -> showNextToken pStateRef
+    _  -> return ()
 
   showNextToken pStateRef = do
     pState <- readIORef pStateRef
     case unP (lexer False return) pState of
-      POk pState' ltok -> do
+      PFailed srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
+      POk pState' tok -> do
         writeIORef pStateRef pState'
-        case ltok of
+        case tok of
           L _ ITeof -> putStrLn "EOF"
           l@(L _ _) -> do
-            LC8.putStrLn $ J.encode $ locTokenToJSON l -- srcSpan ++ ": " ++ show token
+            putJSON $ locTokenToJSON l
             loop pStateRef
 
-      PFailed srcSpan msgDoc -> do
-        hPutStrLn stderr $ "Lexer failed: " ++ show srcSpan {- ++ ": " ++ show msgDoc -}
-        -- exitFailure
-
-  -- Can remove this when we write a ToJSON L instance.
---   mkJson srcSpan token =
---     "{\"srcSpan\":" <> show (toJSON srcSpan) <> ",\"token\":" <> show (toJSON token) <> "}"
+runStrictLexer :: StringBuffer -> IO ()
+runStrictLexer stringBuf =
+  case lexTokenStream stringBuf initSrcLoc defaultFlags of
+    PFailed srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
+    POk _ tokens -> do
+      for_ tokens $ putJSONLn . locTokenToJSON
+      putStrLn "EOF"
 
 {-# NOINLINE _STDIN_PARSE_SEP #-}
 _STDIN_PARSE_SEP :: String
@@ -89,13 +120,40 @@ _STDIN_PARSE_SEP = case unsafePerformIO (lookupEnv "STDIN_PARSE_SEP") of
   Just s -> s
   Nothing -> "<<<STOP PARSE>>>"
 
+{-# NOINLINE _PROMPT #-}
+_PROMPT :: String
+_PROMPT = case unsafePerformIO (lookupEnv "PROMPT") of
+  Just s -> s
+  Nothing -> "> "
+
+{-# NOINLINE _COMMENT_CPP #-}
+_COMMENT_CPP :: Bool
+_COMMENT_CPP = case unsafePerformIO (lookupEnv "COMMENT_CPP") of
+  Nothing -> True
+  Just s  ->
+    case map toLower s of
+      ""      -> True
+      "1"     -> True
+      "true"  -> True
+      "0"     -> False
+      "false" -> False
+      _ -> error $ "Unexpected COMMENT_CPP value: " ++ show s
+
+applyCommentCPPToLine :: String -> String
+applyCommentCPPToLine line = case line of
+  '#':_:rest | _COMMENT_CPP -> "--" ++ rest
+  _                         -> line
+
 consumeStdin :: IO StringBuffer
 consumeStdin = do
   contents <- getLines
   return $ stringToStringBuffer contents
   where
+  getOneLine :: IO String
+  getOneLine = applyCommentCPPToLine <$> getLine
+
   getLinesWhile :: (String -> Bool) -> IO String
-  getLinesWhile p = fmap unlines $ takeWhileM p (repeat getLine)
+  getLinesWhile p = fmap unlines $ takeWhileM p (repeat getOneLine)
 
   getLines :: IO String
   getLines = getLinesWhile (/= _STDIN_PARSE_SEP)
@@ -108,29 +166,8 @@ consumeStdin = do
         else return []
   takeWhileM _ _ = return []
 
---   withSystemTempFile "ghc-parser-stdin" $ \path _ -> do
--- --   writeTempFileFromStdin h
---   BS.hGetContents stdin >>= BS.writeFile path
---   hGetStringBuffer path
---   where
---   writeTempFileFromStdin h = do
---     bs <- BS.hGetLine stdin
---     -- Check for NUL byte
---     if not (BS.null bs) && BS.head bs == 0 then
---       return ()
---     else do
---       C8.hPutStrLn h bs
---       writeTempFileFromStdin h
-
--- consumeStdin :: IO StringBuffer
--- consumeStdin = readBlock >>= loop
---   where
---   blockSize = 1024
---
---   readBlock :: IO StringBuffer
---   readBlock = hGetStringBufferBlock stdin blockSize
---
---   loop :: StringBuffer -> IO StringBuffer
---   loop block = do
---     next <- readBlock
---     if len next == 0 then return block else appendStringBuffers block next >>= loop
+-- Adapted from Hakyll.Core.Util.String
+trim :: String -> String
+trim = reverse . trim' . reverse . trim'
+  where
+  trim' = dropWhile isSpace

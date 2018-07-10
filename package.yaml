@@ -17,9 +17,12 @@ dependencies:
 - base >= 4.7 && < 5
 - aeson
 - bytestring
-- deepseq
+- directory
+- haskeline
 - ghc
 - ghc-paths
+- mtl
+- split
 - text
 
 library:
