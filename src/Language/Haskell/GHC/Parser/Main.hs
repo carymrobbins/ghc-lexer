@@ -114,11 +114,11 @@ runStrictLexer stringBuf =
       for_ tokens $ putJSONLn . locTokenToJSON
       putStrLn "EOF"
 
-{-# NOINLINE _STDIN_PARSE_SEP #-}
-_STDIN_PARSE_SEP :: String
-_STDIN_PARSE_SEP = case unsafePerformIO (lookupEnv "STDIN_PARSE_SEP") of
+{-# NOINLINE _STDIN_EOF #-}
+_STDIN_EOF :: String
+_STDIN_EOF = case unsafePerformIO (lookupEnv "STDIN_EOF") of
   Just s -> s
-  Nothing -> "<<<STOP PARSE>>>"
+  Nothing -> "<EOF>"
 
 {-# NOINLINE _PROMPT #-}
 _PROMPT :: String
@@ -146,6 +146,7 @@ applyCommentCPPToLine line = case line of
 
 consumeStdin :: IO StringBuffer
 consumeStdin = do
+  putStrLn $ "INPUT: (Enter code to parse. Use " ++ show _STDIN_EOF ++ " on a line to signal end of file.)"
   contents <- getLines
   return $ stringToStringBuffer contents
   where
@@ -156,7 +157,7 @@ consumeStdin = do
   getLinesWhile p = fmap unlines $ takeWhileM p (repeat getOneLine)
 
   getLines :: IO String
-  getLines = getLinesWhile (/= _STDIN_PARSE_SEP)
+  getLines = getLinesWhile (/= _STDIN_EOF)
 
   takeWhileM :: Monad m => (a -> Bool) -> [m a] -> m [a]
   takeWhileM p (ma : mas) = do
