@@ -25,6 +25,11 @@ dependencies:
 - split
 - text
 
+default-extensions:
+- LambdaCase
+- OverloadedStrings
+- TemplateHaskell
+
 ghc-options:
   -Werror
   -Wall

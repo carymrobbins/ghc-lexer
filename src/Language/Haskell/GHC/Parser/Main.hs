@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 module Language.Haskell.GHC.Parser.Main where
 
 import Language.Haskell.GHC.Parser.Internal.JSON
