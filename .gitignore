@@ -1,0 +1,4 @@
+.stack-work/
+ghc-parser.cabal
+*~
+out/

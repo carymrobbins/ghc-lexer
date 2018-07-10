@@ -1,0 +1,47 @@
+name:                ghc-parser
+version:             0.1.0.0
+github:              "carymrobbins/ghc-parser"
+license:             BSD3
+author:              "Cary Robbins"
+maintainer:          "carymrobbins@gmail.com"
+copyright:           "2018 Cary Robbins"
+
+extra-source-files:
+- README.md
+
+synopsis:            Short description of your package
+category:            Language
+description:         Please see the README on GitHub at <https://github.com/carymrobbins/ghc-parser#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- bytestring
+- deepseq
+- ghc
+- ghc-paths
+- temporary
+
+library:
+  source-dirs: src
+
+executables:
+  ghc-parser:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - ghc-parser
+
+tests:
+  ghc-parser-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - ghc-parser
