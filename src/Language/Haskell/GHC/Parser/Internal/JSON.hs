@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Language.Haskell.GHC.Parser.Internal.JSON where
 
 import Data.Aeson
@@ -23,6 +24,7 @@ $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ApiAnnot
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ApiAnnotation.HasE)
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Token)
 
+locTokenToJSON :: Located Token -> Value
 locTokenToJSON (L srcSpan token) = object ["srcSpan" .= srcSpan, "token" .= token]
 
 putJSON :: ToJSON a => a -> IO ()

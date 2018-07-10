@@ -25,6 +25,10 @@ dependencies:
 - split
 - text
 
+ghc-options:
+  -Werror
+  -Wall
+
 library:
   source-dirs: src
 

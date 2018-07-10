@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 module Language.Haskell.GHC.Parser.Main where
 
@@ -10,15 +9,12 @@ import Data.Foldable
 import Data.IORef
 import Data.List (intercalate)
 import Data.List.Split (splitOn)
-import qualified Data.Text as T
+import Data.Maybe
 import System.Console.Haskeline
-import System.Exit
 import System.Directory
 import System.IO
 import System.IO.Unsafe
-import Text.Read
 
-import BasicTypes
 import DynFlags
 import FastString
 import GHC
@@ -49,39 +45,40 @@ main = do
 
   isQuit q = q `elem` ["quit", "q", "exit"]
 
-  lexCmd lexer arg = case trim arg of
-    ""   -> liftIO (lexStdin lexer) >> loop
+  lexCmd f arg = case trim arg of
+    ""   -> liftIO (lexStdin f) >> loop
     file -> do
       x <- liftIO $ doesFileExist file
-      if x then liftIO (lexFile lexer file) else outputStrLn $ "File not found: " ++ file
+      if x then liftIO (lexFile f file) else outputStrLn $ "File not found: " ++ file
       loop
 
-  lexFile lexer file = do
+  lexFile f file = do
     contents <- readFile file
     let stringBuf =
             stringToStringBuffer
           $ intercalate "\n"
           $ map applyCommentCPPToLine
           $ splitOn "\n" contents
-    lexer stringBuf
+    f stringBuf
 
-  lexStdin lexer = do
+  lexStdin f = do
     stringBuf <- consumeStdin
-    lexer stringBuf
+    f stringBuf
 
+myHaskelineSettings :: System.Console.Haskeline.Settings IO
 myHaskelineSettings = defaultSettings { historyFile = Just $ homeDir ++ "/.ghc-parser-history" }
 
-{-# NOINLINE globalDynFlags  #-}
+{-# NOINLINE globalDynFlags #-}
 globalDynFlags :: DynFlags
 globalDynFlags = unsafePerformIO $ runGhc (Just libdir) $ return unsafeGlobalDynFlags
 
-{-# NOINLINE defaultFlags #-}
 defaultFlags :: DynFlags
 defaultFlags =
     flip gopt_set Opt_KeepRawTokenStream
   . flip gopt_set Opt_Haddock
   $ globalDynFlags
 
+initSrcLoc :: RealSrcLoc
 initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 0 0
 
 runLazyLexer :: StringBuffer -> IO ()
@@ -92,9 +89,9 @@ runLazyLexer stringBuf = do
   hFlush stdout
   loop pStateRef
   where
-  loop pStateRef = getChar >>= \case
-    '\n' -> showNextToken pStateRef
-    _  -> return ()
+  loop pStateRef = getLine >>= \case
+    "" -> showNextToken pStateRef
+    _    -> return ()
 
   showNextToken pStateRef = do
     pState <- readIORef pStateRef
@@ -118,15 +115,11 @@ runStrictLexer stringBuf =
 
 {-# NOINLINE _STDIN_EOF #-}
 _STDIN_EOF :: String
-_STDIN_EOF = case unsafePerformIO (lookupEnv "STDIN_EOF") of
-  Just s -> s
-  Nothing -> "<EOF>"
+_STDIN_EOF = fromMaybe "<EOF>" $ unsafePerformIO $ lookupEnv "STDIN_EOF"
 
 {-# NOINLINE _PROMPT #-}
 _PROMPT :: String
-_PROMPT = case unsafePerformIO (lookupEnv "PROMPT") of
-  Just s -> s
-  Nothing -> "> "
+_PROMPT = fromMaybe "> " $ unsafePerformIO $ lookupEnv "PROMPT"
 
 {-# NOINLINE _COMMENT_CPP #-}
 _COMMENT_CPP :: Bool
@@ -160,7 +153,7 @@ consumeStdin = do
   getOneLine = applyCommentCPPToLine <$> getLine
 
   getLinesWhile :: (String -> Bool) -> IO String
-  getLinesWhile p = fmap unlines $ takeWhileM p (repeat getOneLine)
+  getLinesWhile p = unlines <$> takeWhileM p (repeat getOneLine)
 
   getLines :: IO String
   getLines = getLinesWhile (/= _STDIN_EOF)
@@ -169,7 +162,7 @@ consumeStdin = do
   takeWhileM p (ma : mas) = do
       a <- ma
       if p a
-        then fmap (a :) $ takeWhileM p mas
+        then (a :) <$> takeWhileM p mas
         else return []
   takeWhileM _ _ = return []
 
