@@ -31,7 +31,7 @@ import System.Environment
 main :: IO ()
 main = do
   hSetBuffering stdout LineBuffering
-  runInputT defaultSettings loop
+  runInputT myHaskelineSettings loop
   where
   loop :: InputT IO ()
   loop = getInputLine _PROMPT >>= \case
@@ -68,6 +68,8 @@ main = do
   lexStdin lexer = do
     stringBuf <- consumeStdin
     lexer stringBuf
+
+myHaskelineSettings = defaultSettings { historyFile = Just $ homeDir ++ "/.ghc-parser-history" }
 
 {-# NOINLINE globalDynFlags  #-}
 globalDynFlags :: DynFlags
@@ -138,6 +140,10 @@ _COMMENT_CPP = case unsafePerformIO (lookupEnv "COMMENT_CPP") of
       "0"     -> False
       "false" -> False
       _ -> error $ "Unexpected COMMENT_CPP value: " ++ show s
+
+{-# NOINLINE homeDir #-}
+homeDir :: String
+homeDir = unsafePerformIO getHomeDirectory
 
 applyCommentCPPToLine :: String -> String
 applyCommentCPPToLine line = case line of
