@@ -15,11 +15,12 @@ description:         Please see the README on GitHub at <https://github.com/cary
 
 dependencies:
 - base >= 4.7 && < 5
+- aeson
 - bytestring
 - deepseq
 - ghc
 - ghc-paths
-- temporary
+- text
 
 library:
   source-dirs: src

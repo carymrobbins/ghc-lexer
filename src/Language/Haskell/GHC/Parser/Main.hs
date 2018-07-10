@@ -2,17 +2,22 @@
 {-# LANGUAGE LambdaCase #-}
 module Language.Haskell.GHC.Parser.Main where
 
+import Language.Haskell.GHC.Parser.Internal.JSON
+
 import Control.DeepSeq
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Lazy.Char8 as LC8
+import qualified Data.Aeson as J
 import Data.Char
 import Data.IORef
+import qualified Data.Text.IO as T
 import System.Exit
 import System.IO
-import System.IO.Temp
 import System.IO.Unsafe
 import Text.Read
 
+import BasicTypes
 import DynFlags
 import FastString
 import GHC
@@ -66,13 +71,17 @@ runLazyLexer stringBuf flags = do
         writeIORef pStateRef pState'
         case ltok of
           L _ ITeof -> putStrLn "EOF"
-          L srcSpan token -> do
-            putStrLn $ show srcSpan ++ ": " ++ show token
+          l@(L _ _) -> do
+            LC8.putStrLn $ J.encode $ locTokenToJSON l -- srcSpan ++ ": " ++ show token
             loop pStateRef
 
       PFailed srcSpan msgDoc -> do
         hPutStrLn stderr $ "Lexer failed: " ++ show srcSpan {- ++ ": " ++ show msgDoc -}
         -- exitFailure
+
+  -- Can remove this when we write a ToJSON L instance.
+--   mkJson srcSpan token =
+--     "{\"srcSpan\":" <> show (toJSON srcSpan) <> ",\"token\":" <> show (toJSON token) <> "}"
 
 {-# NOINLINE _STDIN_PARSE_SEP #-}
 _STDIN_PARSE_SEP :: String
