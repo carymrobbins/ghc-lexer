@@ -78,7 +78,7 @@ defaultFlags =
   $ globalDynFlags
 
 initSrcLoc :: RealSrcLoc
-initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 0 0
+initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 1 1
 
 runLazyLexer :: StringBuffer -> IO ()
 runLazyLexer stringBuf = do
