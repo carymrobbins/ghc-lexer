@@ -4,7 +4,6 @@ import Language.Haskell.GHC.Parser.Internal.JSON
 
 import Control.Monad.Trans (liftIO)
 import Data.Char
-import Data.Foldable
 import Data.IORef
 import Data.List (intercalate)
 import Data.List.Split (splitOn)
@@ -82,15 +81,21 @@ initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 1 1
 
 runLazyLexer :: StringBuffer -> IO ()
 runLazyLexer stringBuf = do
+  putStrLn "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
+  runLexer (("" ==) <$> getLine) stringBuf
+
+runStrictLexer :: StringBuffer -> IO ()
+runStrictLexer = runLexer (return True)
+
+runLexer :: IO Bool -> StringBuffer -> IO ()
+runLexer shouldContinue stringBuf = do
   let initialState = mkPState defaultFlags stringBuf initSrcLoc
   pStateRef <- newIORef initialState
-  putStr "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
-  hFlush stdout
   loop pStateRef
   where
-  loop pStateRef = getLine >>= \case
-    "" -> showNextToken pStateRef
-    _    -> return ()
+  loop pStateRef = shouldContinue >>= \case
+    True  -> showNextToken pStateRef
+    False -> return ()
 
   showNextToken pStateRef = do
     pState <- readIORef pStateRef
@@ -98,19 +103,10 @@ runLazyLexer stringBuf = do
       PFailed srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
       POk pState' tok -> do
         writeIORef pStateRef pState'
+        putJSONLn $ locTokenToJSON tok
         case tok of
-          L _ ITeof -> putStrLn "EOF"
-          l@(L _ _) -> do
-            putJSON $ locTokenToJSON l
-            loop pStateRef
-
-runStrictLexer :: StringBuffer -> IO ()
-runStrictLexer stringBuf =
-  case lexTokenStream stringBuf initSrcLoc defaultFlags of
-    PFailed srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
-    POk _ tokens -> do
-      for_ tokens $ putJSONLn . locTokenToJSON
-      putStrLn "EOF"
+          L _ ITeof -> return ()
+          L _ _     -> loop pStateRef
 
 {-# NOINLINE _STDIN_EOF #-}
 _STDIN_EOF :: String
