@@ -119,15 +119,17 @@ _PROMPT = fromMaybe "> " $ unsafePerformIO $ lookupEnv "PROMPT"
 {-# NOINLINE _COMMENT_CPP #-}
 _COMMENT_CPP :: Bool
 _COMMENT_CPP = case unsafePerformIO (lookupEnv "COMMENT_CPP") of
-  Nothing -> True
+  Nothing -> defaultValue
   Just s  ->
     case map toLower s of
-      ""      -> True
+      ""      -> defaultValue
       "1"     -> True
       "true"  -> True
       "0"     -> False
       "false" -> False
       _ -> error $ "Unexpected COMMENT_CPP value: " ++ show s
+  where
+  defaultValue = False
 
 {-# NOINLINE homeDir #-}
 homeDir :: String
