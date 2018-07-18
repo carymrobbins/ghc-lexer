@@ -19,6 +19,7 @@ import FastString
 import GHC
 import GHC.Paths
 import Lexer
+import Parser
 import SrcLoc
 import StringBuffer
 import System.Environment
@@ -35,8 +36,9 @@ main = do
 
   runCommand c = case break (== ' ') c of
     ("", "")          -> loop
-    ("lex", arg)      -> lexCmd runLazyLexer arg
-    ("lexall", arg)   -> lexCmd runStrictLexer arg
+    ("lex", arg)      -> parseCmd runLazyLexer arg
+    ("lexall", arg)   -> parseCmd runStrictLexer arg
+    ("parse", arg)    -> parseCmd runParser arg
     (q, _) | isQuit q -> return ()
     (cmd, _) -> do
       outputStrLn $ "Unknown command: " ++ cmd
@@ -44,7 +46,7 @@ main = do
 
   isQuit q = q `elem` ["quit", "q", "exit"]
 
-  lexCmd f arg = case trim arg of
+  parseCmd f arg = case trim arg of
     ""   -> liftIO (lexStdin f) >> loop
     file -> do
       x <- liftIO $ doesFileExist file
@@ -78,12 +80,14 @@ defaultFlags =
   $ globalDynFlags
 
 initSrcLoc :: RealSrcLoc
-initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 1 1
+initSrcLoc = mkRealSrcLoc (mkFastString "") 1 1
+
+initPState :: StringBuffer -> PState
+initPState stringBuf = mkPState defaultFlags stringBuf initSrcLoc
 
 runLazyLexer :: StringBuffer -> IO ()
 runLazyLexer stringBuf = do
-  let initialState = mkPState defaultFlags stringBuf initSrcLoc
-  pStateRef <- newIORef initialState
+  pStateRef <- newIORef $ initPState stringBuf
   putStr "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
   hFlush stdout
   loop pStateRef
@@ -110,6 +114,14 @@ runStrictLexer stringBuf =
     PFailed srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
     POk _ tokens -> do
       for_ tokens $ putJSONLn . locTokenToJSON
+      putStrLn "EOF"
+
+runParser :: StringBuffer -> IO ()
+runParser stringBuf =
+  case unP Parser.parseModule $ initPState stringBuf of
+    PFailed srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
+    POk _ (L _srcSpan tree) -> do
+      putJSONLn tree
       putStrLn "EOF"
 
 {-# NOINLINE _STDIN_EOF #-}

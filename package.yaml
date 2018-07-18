@@ -31,8 +31,8 @@ default-extensions:
 - TemplateHaskell
 
 ghc-options:
-  -Werror
   -Wall
+  # -Werror
 
 library:
   source-dirs: src
