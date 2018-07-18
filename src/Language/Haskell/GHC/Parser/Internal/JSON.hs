@@ -41,7 +41,7 @@ instance FromJSON C8.ByteString where
 
 instance ToJSON SDoc where
   -- `showSDocUnsafe` will be fine so long as we've initialized the `unsafeGlobalDynFlags`
-  -- which happens at the start of ghc-parser.
+  -- which happens at the start of ghc-lexer.
   toJSON x = toJSON $ showSDocUnsafe x
 
 instance ToJSON RealSrcSpan where

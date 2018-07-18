@@ -1,4 +1,4 @@
 .stack-work/
-ghc-parser.cabal
+ghc-lexer.cabal
 *~
 out/

@@ -4,7 +4,7 @@ compile:
 	stack build
 
 run: compile
-	stack exec ghc-parser
+	stack exec ghc-lexer
 
 clean:
 	stack clean

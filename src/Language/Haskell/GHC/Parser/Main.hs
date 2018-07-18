@@ -65,7 +65,7 @@ main = do
     f stringBuf
 
 myHaskelineSettings :: System.Console.Haskeline.Settings IO
-myHaskelineSettings = defaultSettings { historyFile = Just $ homeDir ++ "/.ghc-parser-history" }
+myHaskelineSettings = defaultSettings { historyFile = Just $ homeDir ++ "/.ghc-lexer-history" }
 
 {-# NOINLINE globalDynFlags #-}
 globalDynFlags :: DynFlags

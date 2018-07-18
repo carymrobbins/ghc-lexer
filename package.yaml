@@ -1,6 +1,6 @@
-name:                ghc-parser
+name:                ghc-lexer
 version:             0.1.0.0
-github:              "carymrobbins/ghc-parser"
+github:              "carymrobbins/ghc-lexer"
 license:             BSD3
 author:              "Cary Robbins"
 maintainer:          "carymrobbins@gmail.com"
@@ -11,7 +11,7 @@ extra-source-files:
 
 synopsis:            Short description of your package
 category:            Language
-description:         Please see the README on GitHub at <https://github.com/carymrobbins/ghc-parser#readme>
+description:         Please see the README on GitHub at <https://github.com/carymrobbins/ghc-lexer#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -38,7 +38,7 @@ library:
   source-dirs: src
 
 executables:
-  ghc-parser:
+  ghc-lexer:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -46,15 +46,4 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - ghc-parser
-
-tests:
-  ghc-parser-test:
-    main:                Spec.hs
-    source-dirs:         test
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - ghc-parser
+    - ghc-lexer

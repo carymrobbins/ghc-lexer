@@ -1,1 +1,1 @@
-# ghc-parser
+# ghc-lexer
