@@ -20,6 +20,7 @@ dependencies:
 - directory
 - haskeline
 - ghc
+- ghc-boot
 - ghc-paths
 - mtl
 - split
