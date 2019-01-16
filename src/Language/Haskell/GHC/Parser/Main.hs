@@ -162,7 +162,7 @@ runLexer shouldContinue stringBuf Args {..} = do
   showNextToken pStateRef = do
     pState <- readIORef pStateRef
     case unP (lexer False return) pState of
-      PFailed srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
+      PFailed _ srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
       POk pState' tok -> do
         writeIORef pStateRef pState'
         -- writeIORef pStateRef $ adjustState pState' tok

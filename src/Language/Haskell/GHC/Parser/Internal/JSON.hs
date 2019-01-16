@@ -22,6 +22,7 @@ $(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''SourceText
 $(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RuleMatchInfo)
 $(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ApiAnnotation.IsUnicodeSyntax)
 $(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ApiAnnotation.HasE)
+$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''IntegralLit)
 $(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Token)
 
 locTokenToJSON :: Located Token -> Value
