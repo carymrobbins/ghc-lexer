@@ -22,8 +22,10 @@ dependencies:
 - ghc
 - ghc-boot
 - ghc-paths
+- ghci
 - mtl
 - split
+- template-haskell
 - text
 
 default-extensions:
@@ -32,8 +34,8 @@ default-extensions:
 - TemplateHaskell
 
 ghc-options:
-  -Werror
   -Wall
+  # -Werror
 
 library:
   source-dirs: src

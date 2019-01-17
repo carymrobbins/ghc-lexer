@@ -25,6 +25,7 @@ import GHC.Paths
 import GHC.LanguageExtensions (Extension)
 import qualified GHC.LanguageExtensions
 import Lexer
+import Parser
 import SrcLoc
 import StringBuffer
 
@@ -39,9 +40,10 @@ main = do
     Just c -> runCommand c
 
   runCommand c = case break (== ' ') c of
-    ("", "") -> loop
-    ("lex", argStr) -> withParseArgsIO argStr $ lexCmd runLazyLexer
-    ("lexall", argStr) -> withParseArgsIO argStr $ lexCmd runStrictLexer
+    ("", "")          -> loop
+    ("lex", arg)      -> parseCmd runLazyLexer arg
+    -- ("lexall", arg)   -> parseCmd runStrictLexer arg
+    ("parse", arg)    -> parseCmd runParser arg
     (q, _) | isQuit q -> return ()
     (cmd, _) -> do
       outputStrLn $ "Unknown command: " ++ cmd
@@ -49,9 +51,9 @@ main = do
 
   isQuit q = q `elem` ["quit", "q", "exit"]
 
-  lexCmd f args = case argsFile args of
-    Nothing -> liftIO (lexStdin f args) >> loop
-    Just file -> do
+  parseCmd f arg = case trim arg of
+    ""   -> liftIO (lexStdin f) >> loop
+    file -> do
       x <- liftIO $ doesFileExist file
       if x then liftIO (lexFile f file args) else outputStrLn $ "File not found: " ++ file
       loop
@@ -134,19 +136,16 @@ defaultFlags :: DynFlags
 defaultFlags = foldl gopt_set globalDynFlags [Opt_KeepRawTokenStream, Opt_Haddock]
 
 initSrcLoc :: RealSrcLoc
-initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 1 1
+initSrcLoc = mkRealSrcLoc (mkFastString "") 1 1
 
-runLazyLexer :: StringBuffer -> Args -> IO ()
-runLazyLexer stringBuf args = do
-  putStrLn "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
-  runLexer (("" ==) <$> getLine) stringBuf args
+initPState :: StringBuffer -> PState
+initPState stringBuf = mkPState defaultFlags stringBuf initSrcLoc
 
-runStrictLexer :: StringBuffer -> Args -> IO ()
-runStrictLexer = runLexer (return True)
-
-runLexer :: IO Bool -> StringBuffer -> Args -> IO ()
-runLexer shouldContinue stringBuf Args {..} = do
-  pStateRef <- newIORef initialState
+runLazyLexer :: StringBuffer -> IO ()
+runLazyLexer stringBuf = do
+  pStateRef <- newIORef $ initPState stringBuf
+  putStr "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
+  hFlush stdout
   loop pStateRef
   where
   allExts = argsExts ++ obtainExtensions stringBuf
@@ -179,6 +178,14 @@ obtainExtensions stringBuf =
 
 updateDynFlagExtensions :: [Extension] -> DynFlags -> DynFlags
 updateDynFlagExtensions exts dflags = foldl xopt_set dflags exts
+
+runParser :: StringBuffer -> IO ()
+runParser stringBuf =
+  case unP Parser.parseModule $ initPState stringBuf of
+    PFailed _ srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
+    POk _ (L _srcSpan tree) -> do
+      putJSONLn tree
+      putStrLn "EOF"
 
 {-# NOINLINE _STDIN_EOF #-}
 _STDIN_EOF :: String
