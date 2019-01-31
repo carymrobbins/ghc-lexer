@@ -12,6 +12,7 @@ import Data.Aeson
 import Data.Aeson.TH
 import Data.Aeson.Types
 import Data.Coerce
+import Data.IORef (IORef)
 import GHC.Generics
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy.Char8 as LC8
@@ -21,12 +22,16 @@ import qualified Language.Haskell.TH.Syntax
 
 import qualified ApiAnnotation
 import qualified Bag
+import qualified Class
+import qualified CoAxiom
 import qualified ConLike
 import qualified CoreSyn
 import qualified CostCentre
+import qualified CostCentreState
 import qualified DataCon
 import qualified ForeignCall
 import qualified FieldLabel
+import qualified MkId
 import qualified Module
 import qualified Name
 import qualified PatSyn
@@ -34,7 +39,9 @@ import qualified RdrName
 import qualified TyCon
 import qualified TyCoRep
 import qualified Unique
+import qualified UniqDFM
 import qualified UniqSet
+import qualified VarSet
 import BasicTypes
 import BooleanFormula
 import Class
@@ -73,6 +80,7 @@ defaultToJSON = genericToJSON $ defaultOptions { sumEncoding = ObjectWithSingleF
 -- Makes it much easier to derive JSON instances for the parser nodes.
 type GP = GhcPass 'Parsed
 type GR = GhcPass 'Renamed
+type GT = GhcPass 'Typechecked
 
 deriving instance Generic (HsModule pass)
 instance ToJSON (HsModule GP) where toJSON = defaultToJSON
@@ -110,6 +118,7 @@ instance ToJSON (HsBindLR GR GR) where toJSON = defaultToJSON
 deriving instance Generic (RoleAnnotDecl pass)
 instance ToJSON (RoleAnnotDecl GP) where toJSON = defaultToJSON
 instance ToJSON (RoleAnnotDecl GR) where toJSON = defaultToJSON
+instance ToJSON (RoleAnnotDecl GT) where toJSON = defaultToJSON
 
 deriving instance Generic (SpliceDecl p)
 instance ToJSON (SpliceDecl GP) where toJSON = defaultToJSON
@@ -161,6 +170,7 @@ instance (ToJSON body) => ToJSON (GRHSs GR body) where toJSON = defaultToJSON
 deriving instance Generic (HsExpr p)
 instance ToJSON (HsExpr GP) where toJSON = defaultToJSON
 instance ToJSON (HsExpr GR) where toJSON = defaultToJSON
+instance ToJSON (HsExpr GT) where toJSON = defaultToJSON
 
 deriving instance Generic RdrName.RdrName
 instance ToJSON RdrName.RdrName where toJSON = defaultToJSON
@@ -201,6 +211,7 @@ instance (ToJSON body) => ToJSON (AnnProvenance body) where toJSON = defaultToJS
 deriving instance Generic (InstDecl pass)
 instance ToJSON (InstDecl GP) where toJSON = defaultToJSON
 instance ToJSON (InstDecl GR) where toJSON = defaultToJSON
+instance ToJSON (InstDecl GT) where toJSON = defaultToJSON
 
 deriving instance Generic (Pat pass)
 instance ToJSON (Pat GP) where toJSON = defaultToJSON
@@ -209,6 +220,7 @@ instance ToJSON (Pat GR) where toJSON = defaultToJSON
 deriving instance Generic (TyClDecl pass)
 instance ToJSON (TyClDecl GP) where toJSON = defaultToJSON
 instance ToJSON (TyClDecl GR) where toJSON = defaultToJSON
+instance ToJSON (TyClDecl GT) where toJSON = defaultToJSON
 
 deriving instance Generic (CoreSyn.Tickish id)
 instance (ToJSON id) => ToJSON (CoreSyn.Tickish id) where toJSON = defaultToJSON
@@ -359,6 +371,7 @@ instance ToJSON TcSpecPrags where toJSON = defaultToJSON
 deriving instance Generic (ClsInstDecl pass)
 instance ToJSON (ClsInstDecl GP) where toJSON = defaultToJSON
 instance ToJSON (ClsInstDecl GR) where toJSON = defaultToJSON
+instance ToJSON (ClsInstDecl GT) where toJSON = defaultToJSON
 
 deriving instance Generic Type
 instance ToJSON Type where toJSON = defaultToJSON
@@ -467,7 +480,7 @@ instance ToJSON TransForm where toJSON = defaultToJSON
 deriving instance Generic HsSyn.Fixity
 instance ToJSON HsSyn.Fixity where toJSON = defaultToJSON
 
--- NB: Really not sure how to deal with this one...
+-- TODO: Really not sure how to deal with this one...
 -- Will just stub in {"Q":[]} for now.
 instance
   ToJSON
@@ -542,6 +555,7 @@ instance ToJSON (ConDecl GR) where toJSON = defaultToJSON
 
 deriving instance Generic (HsDerivingClause pass)
 instance ToJSON (HsDerivingClause GP) where toJSON = defaultToJSON
+instance ToJSON (HsDerivingClause GR) where toJSON = defaultToJSON
 
 deriving instance Generic (FamilyInfo pass)
 instance ToJSON (FamilyInfo GP) where toJSON = defaultToJSON
@@ -551,40 +565,105 @@ deriving instance Generic (FamilyResultSig pass)
 instance ToJSON (FamilyResultSig GP) where toJSON = defaultToJSON
 instance ToJSON (FamilyResultSig GR) where toJSON = defaultToJSON
 
+deriving instance Generic (InjectivityAnn pass)
+instance ToJSON (InjectivityAnn GP) where toJSON = defaultToJSON
+instance ToJSON (InjectivityAnn GR) where toJSON = defaultToJSON
+instance ToJSON (InjectivityAnn GT) where toJSON = defaultToJSON
+
+deriving instance Generic (NHsValBindsLR pass)
+instance ToJSON (NHsValBindsLR GP) where toJSON = defaultToJSON
+instance ToJSON (NHsValBindsLR GR) where toJSON = defaultToJSON
+instance ToJSON (NHsValBindsLR GT) where toJSON = defaultToJSON
+
+deriving instance Generic (IPBind pass)
+instance ToJSON (IPBind GP) where toJSON = defaultToJSON
+instance ToJSON (IPBind GR) where toJSON = defaultToJSON
+instance ToJSON (IPBind GT) where toJSON = defaultToJSON
+
+deriving instance Generic (TyClGroup pass)
+instance ToJSON (TyClGroup GP) where toJSON = defaultToJSON
+instance ToJSON (TyClGroup GR) where toJSON = defaultToJSON
+instance ToJSON (TyClGroup GT) where toJSON = defaultToJSON
+
 -- deriving instance Generic X
 -- instance ToJSON X where toJSON = defaultToJSON
 
 -- deriving instance Generic (X pass)
 -- instance ToJSON (X GP) where toJSON = defaultToJSON
 -- instance ToJSON (X GR) where toJSON = defaultToJSON
+-- instance ToJSON (X GT) where toJSON = defaultToJSON
+
+-- TODO: Not really sure what I'm supposed to do with this, it's defined as
+-- newtype MkId.DataConBoxer
+--  = MkId.DCB ([Type]
+--              -> [Var] -> UniqSupply.UniqSM ([Var], [CoreSyn.CoreBind]))
+instance ToJSON MkId.DataConBoxer where
+  toJSON = object [ "DataConBoxer" .= [] ]
+
+-- TODO: I have no idea how to deal with IORef. Why is there an IORef in
+-- the parse tree?
+instance ToJSON (IORef VarSet.CoVarSet) where
+  toJSON _ = object [ "IORef" .= ["CoVarSet"] ]
+instance ToJSON (IORef EvBindMap) where
+  toJSON _ = object [ "IORef" .= ["EvBindMap"] ]
 
 -- TODO: Bypassing hidden constructor. Probably bad, but, meh. Maybe we can
 -- do this instead of the custom ToJSON in a few cases.
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.TyCon)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.TyCon)
 
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''NewHsTypeX)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ForeignCall.Header)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ArgFlag)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''PatSyn.PatSyn)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CostCentre.CCFlavour)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Name.OccEnv)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsTyLit)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''UniqSet.UniqSet)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsIBRn)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsSrcBang)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CImportSpec)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsTupleSort)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Promoted)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCoRep.TyLit)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsWildCardInfo)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RdrName.GlobalRdrElt)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsRuleRn)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''DataCon.DataCon)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''NewOrData)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''DataDeclRn)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ForeignCall.CType)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsQTvsRn)
-$(deriveJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''UntypedSpliceFlavour)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''NewHsTypeX)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ForeignCall.Header)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ArgFlag)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''PatSyn.PatSyn)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CostCentre.CCFlavour)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Name.OccEnv)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsTyLit)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''UniqSet.UniqSet)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsIBRn)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsSrcBang)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CImportSpec)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsTupleSort)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Promoted)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCoRep.TyLit)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsWildCardInfo)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RdrName.GlobalRdrElt)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsRuleRn)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''DataCon.DataCon)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''NewOrData)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''DataDeclRn)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ForeignCall.CType)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsQTvsRn)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''UntypedSpliceFlavour)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''DataCon.EqSpec)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''DataCon.DataConRep)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''DataCon.StrictnessMark)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''HsImplBang)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RdrName.Parent)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RdrName.ImportSpec)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RdrName.ImpDeclSpec)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CoAxiom.CoAxiom)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CoreSyn.Expr)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''FixityDirection)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Module.DefUnitId)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CostCentreState.CostCentreIndex)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''SrcUnpackedness)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ForeignCall.CCallTarget)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RdrName.ImpItemSpec)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''UniqDFM.UniqDFM)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CoAxiom.Branches)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CoAxiom.CoAxiomRule)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''EvTypeable)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Module.IndefUnitId)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Module.InstalledUnitId)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''RecFlag)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.RuntimeRepInfo)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Module.ComponentId)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCoRep.UnivCoProvenance)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.Injectivity)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''LeftOrRight)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Class)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''CoercionHole)
+$(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.FamTyConFlav)
 
 -----------------------------------------
 -- Other instances, types, functions
