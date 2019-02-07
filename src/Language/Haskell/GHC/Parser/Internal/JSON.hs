@@ -94,6 +94,11 @@ type GP = GhcPass 'Parsed
 type GR = GhcPass 'Renamed
 type GT = GhcPass 'Typechecked
 
+instance (ToJSON a) => ToJSON (ParseResult a) where
+  toJSON = \case
+    POk _state a -> object [ "POk" .= a ]
+    PFailed _ errSpan msg -> object [ "PFailed" .= [toJSON errSpan, toJSON msg] ]
+
 deriving instance Generic (HsModule pass)
 instance ToJSON (HsModule GP) where toJSON = defaultToJSON
 
@@ -735,8 +740,6 @@ instance ToJSON Class where toJSON = stubToJSON
 -- TODO: Just stubbing since it only contains functions...
 instance ToJSON CoAxiom.BuiltInSynFamily where toJSON = stubToJSON
 
--- TODO: Bypassing hidden constructor. Probably bad, but, meh. Maybe we can
--- do this instead of the custom ToJSON in a few cases.
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''FunctionOrData)
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Literal.LitNumType)
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''Literal.Literal)
@@ -746,6 +749,8 @@ $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.Ty
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.TyConBndrVis)
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.AlgTyConRhs)
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.AlgTyConFlav)
+-- TODO: Bypassing hidden constructor. Probably bad, but, meh. Maybe we can
+-- do this instead of the custom ToJSON in a few cases.
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''TyCon.TyCon)
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''NewHsTypeX)
 $(deriveToJSON defaultOptions { sumEncoding = ObjectWithSingleField } ''ForeignCall.Header)

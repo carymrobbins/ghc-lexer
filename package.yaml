@@ -37,8 +37,8 @@ default-extensions:
 - TypeApplications
 
 ghc-options:
-  -Wall
-  # -Werror
+- -Wall
+#- -Werror
 
 library:
   source-dirs: src

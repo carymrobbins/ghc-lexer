@@ -184,11 +184,7 @@ updateDynFlagExtensions exts dflags = foldl xopt_set dflags exts
 
 runParser :: StringBuffer -> Args -> IO ()
 runParser stringBuf Args {..} =
-  case unP Parser.parseModule $ (const initialState) stringBuf of
-    PFailed _ srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
-    POk _ (L _srcSpan tree) -> do
-      putJSONLn tree
-      putStrLn "EOF"
+  putJSONLn $ unP Parser.parseModule $ (const initialState) stringBuf
   where
   -- TODO: This is copy pasta from runLexer
   allExts = argsExts ++ obtainExtensions stringBuf
