@@ -40,10 +40,10 @@ main = do
     Just c -> runCommand c
 
   runCommand c = case break (== ' ') c of
-    ("", "")          -> loop
-    ("lex", arg)      -> parseCmd runLazyLexer arg
-    -- ("lexall", arg)   -> parseCmd runStrictLexer arg
-    ("parse", arg)    -> parseCmd runParser arg
+    ("", "") -> loop
+    ("lex", argStr) -> withParseArgsIO argStr $ runCmd runLazyLexer
+    ("lexall", argStr) -> withParseArgsIO argStr $ runCmd runStrictLexer
+    ("parse", argStr) -> withParseArgsIO argStr $ runCmd runParser
     (q, _) | isQuit q -> return ()
     (cmd, _) -> do
       outputStrLn $ "Unknown command: " ++ cmd
@@ -51,14 +51,14 @@ main = do
 
   isQuit q = q `elem` ["quit", "q", "exit"]
 
-  parseCmd f arg = case trim arg of
-    ""   -> liftIO (lexStdin f) >> loop
-    file -> do
+  runCmd f args = case argsFile args of
+    Nothing -> liftIO (runStdin f args) >> loop
+    Just file -> do
       x <- liftIO $ doesFileExist file
-      if x then liftIO (lexFile f file args) else outputStrLn $ "File not found: " ++ file
+      if x then liftIO (runFile f file args) else outputStrLn $ "File not found: " ++ file
       loop
 
-  lexFile f file args = do
+  runFile f file args = do
     contents <- readFile file
     let stringBuf =
             stringToStringBuffer
@@ -67,7 +67,7 @@ main = do
           $ splitOn "\n" contents
     f stringBuf args
 
-  lexStdin f args = do
+  runStdin f args = do
     stringBuf <- consumeStdin
     f stringBuf args
 
@@ -136,16 +136,19 @@ defaultFlags :: DynFlags
 defaultFlags = foldl gopt_set globalDynFlags [Opt_KeepRawTokenStream, Opt_Haddock]
 
 initSrcLoc :: RealSrcLoc
-initSrcLoc = mkRealSrcLoc (mkFastString "") 1 1
+initSrcLoc = mkRealSrcLoc (mkFastString "a.hs") 1 1
 
-initPState :: StringBuffer -> PState
-initPState stringBuf = mkPState defaultFlags stringBuf initSrcLoc
+runLazyLexer :: StringBuffer -> Args -> IO ()
+runLazyLexer stringBuf args = do
+  putStrLn "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
+  runLexer (("" ==) <$> getLine) stringBuf args
 
-runLazyLexer :: StringBuffer -> IO ()
-runLazyLexer stringBuf = do
-  pStateRef <- newIORef $ initPState stringBuf
-  putStr "OUTPUT: (Press enter for next element. Anything else will stop lexing)"
-  hFlush stdout
+runStrictLexer :: StringBuffer -> Args -> IO ()
+runStrictLexer = runLexer (return True)
+
+runLexer :: IO Bool -> StringBuffer -> Args -> IO ()
+runLexer shouldContinue stringBuf Args {..} = do
+  pStateRef <- newIORef initialState
   loop pStateRef
   where
   allExts = argsExts ++ obtainExtensions stringBuf
@@ -179,13 +182,20 @@ obtainExtensions stringBuf =
 updateDynFlagExtensions :: [Extension] -> DynFlags -> DynFlags
 updateDynFlagExtensions exts dflags = foldl xopt_set dflags exts
 
-runParser :: StringBuffer -> IO ()
-runParser stringBuf =
-  case unP Parser.parseModule $ initPState stringBuf of
+runParser :: StringBuffer -> Args -> IO ()
+runParser stringBuf Args {..} =
+  case unP Parser.parseModule $ (const initialState) stringBuf of
     PFailed _ srcSpan msgDoc -> putJSONLn $ Failure msgDoc srcSpan
     POk _ (L _srcSpan tree) -> do
       putJSONLn tree
       putStrLn "EOF"
+  where
+  -- TODO: This is copy pasta from runLexer
+  allExts = argsExts ++ obtainExtensions stringBuf
+
+  initialFlags = updateDynFlagExtensions allExts defaultFlags
+
+  initialState = mkPState initialFlags stringBuf initSrcLoc
 
 {-# NOINLINE _STDIN_EOF #-}
 _STDIN_EOF :: String

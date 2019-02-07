@@ -31,7 +31,10 @@ dependencies:
 default-extensions:
 - LambdaCase
 - OverloadedStrings
+- RankNTypes
+- ScopedTypeVariables
 - TemplateHaskell
+- TypeApplications
 
 ghc-options:
   -Wall
